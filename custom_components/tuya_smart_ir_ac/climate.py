@@ -14,10 +14,11 @@ from homeassistant.components.climate.const import (
     SUPPORT_TARGET_TEMPERATURE,
     SUPPORT_FAN_MODE,
 )
-from homeassistant.const import UnitOfTemperature, STATE_UNKNOWN
+from homeassistant.const import UnitOfTemperature, STATE_UNKNOWN, STATE_UNAVAILABLE
 from homeassistant.components.climate import ClimateEntity
 
 from .const import VALID_MODES
+from .const import FAN_MODES
 from .api import TuyaAPI
 
 _LOGGER = logging.getLogger("tuya_hack")
@@ -28,6 +29,7 @@ REMOTE_ID = "remote_id"
 AC_ID = "ac_id"
 NAME = "name"
 SENSOR = "sensor"
+HSENSOR = "hsensor"
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
@@ -36,7 +38,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(REMOTE_ID): cv.string,
         vol.Required(AC_ID): cv.string,
         vol.Required(NAME): cv.string,
-        vol.Required(SENSOR): cv.string,
+        vol.Optional(SENSOR, default= "sensor"): cv.string,
+        vol.Optional(HSENSOR, default= "sersor"): cv.string,
     }
 )
 
@@ -53,7 +56,8 @@ def setup_platform(
         "remote_id": config[REMOTE_ID],
         "ac_id": config[AC_ID],
         "name": config[NAME],
-        "sensor": config[SENSOR]
+        "sensor": config[SENSOR],
+        "hsensor": config[HSENSOR]
     }
 
     add_entities([TuyaThermostat(climate, hass)])
@@ -70,6 +74,7 @@ class TuyaThermostat(ClimateEntity):
             climate[REMOTE_ID],
         )
         self._sensor_name = climate[SENSOR]
+        self._hsensor_name = climate[HSENSOR]
         self._name = climate[NAME]
 
     @property
@@ -90,19 +95,31 @@ class TuyaThermostat(ClimateEntity):
 
     @property
     def min_temp(self):
-        return 15
+        return 25
 
     @property
     def max_temp(self):
-        return 30
+        return 29
+
+    @property
+    def target_temperature_step(self):
+        return 1.0
 
     @property
     def current_temperature(self):
         sensor_state = self.hass.states.get(self._sensor_name)
         _LOGGER.info("SENSOR STATE ", sensor_state)
-        if sensor_state and sensor_state.state != STATE_UNKNOWN:
+        if sensor_state and sensor_state.state not in (STATE_UNKNOWN,STATE_UNAVAILABLE):
             return float(sensor_state.state)
         return float(self._api._temperature) if self._api._temperature else None
+
+    @property
+    def current_humidity(self):
+        sensor_state = self.hass.states.get(self._hsensor_name)
+        _LOGGER.info("SENSOR STATE ", sensor_state)
+        if sensor_state and sensor_state.state not in (STATE_UNKNOWN,STATE_UNAVAILABLE):
+            return float(sensor_state.state)
+        return None
 
     @property
     def target_temperature(self):
@@ -120,23 +137,14 @@ class TuyaThermostat(ClimateEntity):
 
     @property
     def fan_mode(self):
-        return (
-            "Low"
-            if self._api._wind == "1"
-            else "Medium"
-            if self._api._wind == "2"
-            else "High"
-            if self._api._wind == "3"
-            else "Automatic"
-            if self._api._wind == "1"
-            else None
-        )
+        return FAN_MODES.get(str(self._api._wind), None)
 
     @property
     def fan_modes(self):
-        return list(["Low", "Medium", "High", "Automatic"])
+        return list(FAN_MODES.values())
+#       return list(["Low", "Medium", "High", "Automatic"])
 
-    async def async_set_fan_mode(self, fan_mode):
+    async def async_set_fan_mode_back(self, fan_mode):
         if fan_mode == "Low":
             await self._api.send_command("wind", "1")
         elif fan_mode == "Medium":
@@ -148,6 +156,12 @@ class TuyaThermostat(ClimateEntity):
         else:
             await self._api.send_command("wind", "0")
             _LOGGER.warning("Invalid fan mode.")
+
+    async def async_set_fan_mode(self, fan_mode):
+        for fan, fan_name in FAN_MODES.items():
+            if fan_mode == fan_name:
+                await self._api.async_set_fan_speed(fan)
+                break
 
     async def async_update(self):
         await self._api.async_update()
@@ -165,8 +179,8 @@ class TuyaThermostat(ClimateEntity):
                 if mode == "5":
                     await self._api.async_turn_off()
                 else:
-                    if self._api._power == "0":
-                        await self._api.async_turn_on()
-                    await self._api.async_set_fan_speed(0)
                     await self._api.async_set_hvac_mode(mode)
+#                    if self._api._power == "0":
+#                        await self._api.async_turn_on()
+#                    await self._api.async_set_fan_speed(0)
                 break

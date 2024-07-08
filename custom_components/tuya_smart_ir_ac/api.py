@@ -23,7 +23,7 @@ class TuyaAPI:
         self.ir_remote_device_id = ir_remote_device_id
         self.hass = hass
 
-        openapi = TuyaOpenAPI("https://openapi.tuyaeu.com", access_id, access_secret)
+        openapi = TuyaOpenAPI("https://openapi.tuyaus.com", access_id, access_secret)
         openapi.connect()
         self.openapi = openapi
 
@@ -58,12 +58,13 @@ class TuyaAPI:
         await self.send_command("power", "0")
 
     async def async_set_hvac_mode(self, hvac_mode):
-        _LOGGER.info(hvac_mode)
-        for mode, mode_name in VALID_MODES.items():
-            if hvac_mode == mode_name:
-                _LOGGER.info(mode)
-                await self.send_command("mode", mode)
-                break
+#        _LOGGER.info(hvac_mode)
+        await self.send_command("mode", hvac_mode)
+#        for mode, mode_name in VALID_MODES.items():
+#            if hvac_mode == mode_name:
+#                _LOGGER.info(mode)
+#                await self.send_command("mode", mode)
+#                break
 
     async def get_status(self):
         url = f"/v2.0/infrareds/{self.ir_remote_device_id}/remotes/{self.thermostat_device_id}/ac/status"
